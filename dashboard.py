@@ -25,6 +25,45 @@ def load_models():
 
 price_model, resale_model, le_dict, feature_cols = load_models()
 
+def get_fraud_flags(property_type, size_sqft, area, city, floor_level, legal_status, rental_yield_pct, occupancy_status):
+    flags = []
+
+    # Size sanity checks per property type
+    size_limits = {
+        "Apartment":  (200,  5000),
+        "Villa":      (800,  15000),
+        "Plot":       (500,  20000),
+        "Shop":       (50,   3000),
+        "Warehouse":  (1000, 50000),
+    }
+    min_size, max_size = size_limits[property_type]
+    if size_sqft < min_size:
+        flags.append(f"🚨 Size too small for {property_type} — {size_sqft} sqft is below minimum {min_size} sqft")
+    if size_sqft > max_size:
+        flags.append(f"🚨 Size unusually large for {property_type} — {size_sqft} sqft exceeds typical {max_size} sqft")
+
+    # Floor level mismatch
+    if property_type in ["Villa", "Plot", "Warehouse"] and floor_level > 0:
+        flags.append(f"🚨 Floor level {floor_level} is invalid for {property_type} — should be ground floor only")
+
+    # Rental yield without rented status
+    if rental_yield_pct > 0 and occupancy_status != "Rented":
+        flags.append(f"🚨 Rental yield {rental_yield_pct}% entered but occupancy is '{occupancy_status}' — mismatch detected")
+
+    # Disputed title with high rental yield
+    if legal_status == "Disputed" and rental_yield_pct > 3:
+        flags.append("🚨 High rental yield on disputed property — verify ownership before proceeding")
+
+    # Mumbai plot size check
+    if city == "Mumbai" and property_type == "Plot" and size_sqft > 5000:
+        flags.append("🚨 Plot size unusually large for Mumbai — verify land records")
+
+    # Shop on high floor
+    if property_type == "Shop" and floor_level > 3:
+        flags.append(f"🚨 Shop on floor {floor_level} — commercial viability and footfall risk")
+
+    return flags
+
 # ── Styling ──
 st.markdown("""
 <style>
@@ -34,14 +73,17 @@ st.markdown("""
     padding: 20px;
     border-left: 5px solid #0d9488;
     margin-bottom: 12px;
+    min-height: 100px;
 }
 .metric-value { font-size: 28px; font-weight: 700; color: #0f172a; }
 .metric-label { font-size: 13px; color: #64748b; margin-bottom: 4px; }
 .risk-card {
-    background: #fef2f2;
+    background: #f8fafc;
     border-radius: 12px;
-    padding: 16px;
-    border-left: 5px solid #dc2626;
+    padding: 20px;
+    border-left: 5px solid #0d9488;
+    color: #0f172a;
+    min-height: 100px;
 }
 .narration-card {
     background: #f0fdf4;
@@ -148,6 +190,7 @@ if analyze:
     confidence = round(np.clip(0.5 + (resale_score / 200) + (0.1 if legal_status == "Clear" else 0), 0.4, 0.95), 2)
 
     # ── Risk flags ──
+    # ── Risk flags ──
     risk_flags = []
     if legal_status == "Disputed":
         risk_flags.append("⚠️ Disputed title — high legal risk")
@@ -162,48 +205,63 @@ if analyze:
     if not risk_flags:
         risk_flags.append("✅ No major risk flags detected")
 
+    # ── Fraud checks ──
+    fraud_flags = get_fraud_flags(
+        property_type, size_sqft, area, city,
+        floor_level, legal_status, rental_yield_pct, occupancy_status
+    )
     st.divider()
     st.subheader("📊 Valuation Report")
 
     # ── Metric cards ──
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown(f"""<div class="metric-card">
+        st.markdown(f"""<div class="metric-card" style="min-height:100px">
         <div class="metric-label">Market Value Range</div>
         <div class="metric-value">₹{mv_low/1e5:.1f}L – ₹{mv_high/1e5:.1f}L</div>
         </div>""", unsafe_allow_html=True)
 
     with c2:
-        st.markdown(f"""<div class="metric-card">
+        st.markdown(f"""<div class="metric-card" style="min-height:100px">
         <div class="metric-label">Distress Sale Value</div>
         <div class="metric-value">₹{dv_low/1e5:.1f}L – ₹{dv_high/1e5:.1f}L</div>
         </div>""", unsafe_allow_html=True)
 
     with c3:
-        st.markdown(f"""<div class="metric-card">
+        st.markdown(f"""<div class="metric-card" style="min-height:100px">
         <div class="metric-label">Resale Score</div>
         <div class="metric-value">{resale_score} / 100 &nbsp; {liquidity_label}</div>
         </div>""", unsafe_allow_html=True)
 
     c4, c5, c6 = st.columns(3)
     with c4:
-        st.markdown(f"""<div class="metric-card">
+        st.markdown(f"""<div class="metric-card" style="min-height:100px">
         <div class="metric-label">Time to Sell</div>
         <div class="metric-value">{time_low}–{time_high} days</div>
         </div>""", unsafe_allow_html=True)
 
     with c5:
-        st.markdown(f"""<div class="metric-card">
+        st.markdown(f"""<div class="metric-card" style="min-height:100px">
         <div class="metric-label">Confidence Score</div>
         <div class="metric-value">{confidence}</div>
         </div>""", unsafe_allow_html=True)
 
     with c6:
-        st.markdown(f"""<div class="risk-card">
+        st.markdown(f"""<div class="metric-card" style="min-height:100px">
         <div class="metric-label">Risk Flags</div>
-        <div style="font-size:13px; margin-top:6px">{"<br>".join(risk_flags)}</div>
+        <div style="font-size:13px; margin-top:6px; color:#0f172a">{"<br>".join(risk_flags)}</div>
         </div>""", unsafe_allow_html=True)
 
+    # ── Fraud flags display ──
+    if fraud_flags:
+        st.divider()
+        st.subheader("🚨 Fraud & Sanity Check Alerts")
+        for flag in fraud_flags:
+            st.error(flag)
+    else:
+        st.divider()
+        st.success("✅ Fraud & Sanity Checks Passed — All inputs are within expected ranges")
+        
     # ── SHAP chart ──
     st.divider()
     st.subheader("🔍 What drove this valuation?")
