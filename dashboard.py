@@ -261,7 +261,46 @@ if analyze:
     else:
         st.divider()
         st.success("✅ Fraud & Sanity Checks Passed — All inputs are within expected ranges")
-        
+
+    # ── Map embed ──
+    st.divider()
+    st.subheader("📍 Property Location")
+    
+    area_coords = {
+        "Baner":        (18.5590, 73.7868),
+        "Hinjewadi":    (18.5904, 73.7381),
+        "Kothrud":      (18.5074, 73.8077),
+        "Wakad":        (18.5975, 73.7618),
+        "Viman Nagar":  (18.5679, 73.9143),
+        "Andheri West": (19.1360, 72.8262),
+        "Powai":        (19.1176, 72.9060),
+        "Thane West":   (19.2183, 72.9781),
+        "Borivali":     (19.2307, 72.8567),
+        "Kharghar":     (19.0474, 73.0659),
+    }
+    
+    lat, lon = area_coords[area]
+    zoom = 14
+    
+    map_html = f"""
+    <div style="border-radius:12px; overflow:hidden; border: 1px solid #e2e8f0;">
+    <iframe
+        width="100%"
+        height="300"
+        frameborder="0"
+        scrolling="no"
+        marginheight="0"
+        marginwidth="0"
+        src="https://www.openstreetmap.org/export/embed.html?bbox={lon-0.02},{lat-0.02},{lon+0.02},{lat+0.02}&layer=mapnik&marker={lat},{lon}"
+        style="border:0">
+    </iframe>
+    <div style="padding:8px 12px; background:#f8fafc; font-size:12px; color:#64748b;">
+        📍 {area}, {city} — Lat: {lat}, Lon: {lon}
+    </div>
+    </div>
+    """
+    st.markdown(map_html, unsafe_allow_html=True)
+
     # ── SHAP chart ──
     st.divider()
     st.subheader("🔍 What drove this valuation?")
